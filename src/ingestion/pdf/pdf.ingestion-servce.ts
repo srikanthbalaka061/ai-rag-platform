@@ -38,7 +38,7 @@ export async function ingestPdf(
 
   const metadata = await extractPdfMetadata(input.filePath);
 console.log("Extracted metadata:", metadata);
-  const chunks = createPdfChunks(
+  const chunks = await createPdfChunks(
     documentId,
     cleanedPages,
     {

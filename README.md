@@ -3,6 +3,11 @@
 TypeScript/Express RAG service with local Hugging Face embeddings and Qdrant
 vector storage.
 
+Chunking uses LangChain's `RecursiveCharacterTextSplitter`; local embedding
+uses the LangChain `Embeddings` interface backed by the configured
+Transformers.js model. Query and document embeddings share the same model and
+pooling/normalization settings.
+
 ## Supported ingestion formats
 
 The upload pipeline currently supports PDF, DOCX, TXT, Markdown (`.md` and

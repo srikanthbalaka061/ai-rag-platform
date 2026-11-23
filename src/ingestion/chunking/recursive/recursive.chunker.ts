@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
 import type {
   PdfPage,
@@ -10,83 +11,34 @@ interface ChunkOptions {
   chunkOverlap: number;
 }
 
-export function createPdfChunks(
+export async function createPdfChunks(
   documentId: string,
   pages: PdfPage[],
   options: ChunkOptions
-): PdfChunk[] {
+): Promise<PdfChunk[]> {
+  const splitter = new RecursiveCharacterTextSplitter({
+    chunkSize: options.chunkSize,
+    chunkOverlap: options.chunkOverlap,
+  });
   const chunks: PdfChunk[] = [];
 
-  let currentText = "";
-  let pageStart = 1;
-  let pageEnd = 1;
-  let chunkIndex = 0;
-
-  const flush = () => {
-    const content = currentText.trim();
-
-    if (!content) return;
-
-    chunks.push({
-      id: randomUUID(),
-      documentId,
-      content,
-      chunkIndex: chunkIndex++,
-      pageStart,
-      pageEnd,
-      metadata: {},
-    });
-
-    const overlap = content.slice(-options.chunkOverlap);
-
-    currentText = overlap;
-    pageStart = pageEnd;
-  };
-
   for (const page of pages) {
-    const text = page.text.trim();
+    const contents = await splitter.splitText(page.text);
 
-    if (!text) continue;
+    for (const content of contents) {
+      if (!content.trim()) continue;
 
-    const paragraphs = text.split(/\n\s*\n/);
-
-    for (const paragraph of paragraphs) {
-      const value = paragraph.trim();
-
-      if (!value) continue;
-
-      if (
-        currentText.length + value.length >
-        options.chunkSize
-      ) {
-        flush();
-      }
-
-      if (value.length > options.chunkSize) {
-        let remaining = value;
-
-        while (remaining.length > options.chunkSize) {
-          const part = remaining.slice(0, options.chunkSize);
-
-          currentText += part;
-          pageEnd = page.pageNumber;
-          flush();
-
-          remaining = remaining.slice(
-            options.chunkSize - options.chunkOverlap
-          );
-        }
-
-        currentText += remaining + "\n\n";
-      } else {
-        currentText += value + "\n\n";
-      }
-
-      pageEnd = page.pageNumber;
+      chunks.push({
+        id: randomUUID(),
+        documentId,
+        content,
+        chunkIndex: chunks.length,
+        pageStart: page.pageNumber,
+        pageEnd: page.pageNumber,
+        metadata: { extractionMethod: page.extractionMethod },
+      });
     }
   }
-
-  flush();
 
   return chunks;
 }
