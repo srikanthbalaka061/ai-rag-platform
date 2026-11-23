@@ -91,4 +91,40 @@ router.post("/ingest", uploadMiddleware, async (req, res) => {
   }
 });
 
+const deleteDocumentSchema = z.object({
+  documentId: z.string().trim().min(1).max(128),
+  tenantId: z.string().trim().min(1).max(128),
+});
+
+router.delete("/:documentId", async (req, res) => {
+  const validation = deleteDocumentSchema.safeParse({
+    documentId: req.params.documentId,
+    tenantId: req.query.tenantId,
+  });
+
+  if (!validation.success) {
+    res.status(400).json({
+      message: "A valid documentId path parameter and tenantId query parameter are required",
+      errors: validation.error.flatten(),
+    });
+    return;
+  }
+
+  try {
+    const result = await ingestionService.deleteDocument(
+      validation.data.documentId,
+      validation.data.tenantId
+    );
+
+    res.status(200).json({
+      documentId: validation.data.documentId,
+      deleted: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Document chunk deletion failed:", error);
+    res.status(500).json({ message: "Failed to delete document chunks" });
+  }
+});
+
 export default router;

@@ -6,9 +6,11 @@ import type {
 import { ingestionRegistry } from "./loaders/index.js";
 import { WebLoader } from "./loaders/web/web.loader.js";
 import { ingestDocument } from "./core/ingestion.orchestrator.js";
+import { QdrantVectorStore } from "./vector-store/qdrant/qdrant.store.js";
 
 export class IngestionService {
   private webLoader = new WebLoader();
+  private vectorStore = new QdrantVectorStore();
 
   supportsFile(fileName: string): boolean {
     return ingestionRegistry.supports(fileName);
@@ -30,6 +32,10 @@ export class IngestionService {
 
   async ingestDocument(source: DocumentSource) {
     return ingestDocument(source);
+  }
+
+  async deleteDocument(documentId: string, tenantId: string) {
+    return this.vectorStore.deleteDocumentChunks(documentId, tenantId);
   }
 }
 

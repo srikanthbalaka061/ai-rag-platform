@@ -45,6 +45,20 @@ export async function initializeCollection(): Promise<void> {
       `Qdrant payload index for tenantId must be keyword, received ${tenantIndex.data_type}`,
     );
   }
+
+  const documentIndex = collection.payload_schema.documentId;
+  if (!documentIndex) {
+    await qdrantClient.createPayloadIndex(collectionName, {
+      field_name: "documentId",
+      field_schema: "keyword",
+      wait: true,
+    });
+    console.log(`Payload index created: ${collectionName}.documentId`);
+  } else if (documentIndex.data_type !== "keyword") {
+    throw new Error(
+      `Qdrant payload index for documentId must be keyword, received ${documentIndex.data_type}`,
+    );
+  }
 }
 
 export async function upsertVector(record: VectorRecord): Promise<void> {

@@ -8,6 +8,30 @@ import type {
 const UPSERT_BATCH_SIZE = 64;
 
 export class QdrantVectorStore implements VectorStore {
+  async deleteDocumentChunks(
+    documentId: string,
+    tenantId: string
+  ): Promise<{ operationId: number | null; status: string }> {
+    if (!documentId.trim() || !tenantId.trim()) {
+      throw new Error("Document ID and tenant ID are required");
+    }
+
+    const result = await qdrantClient.delete(env.qdrantCollection, {
+      wait: true,
+      filter: {
+        must: [
+          { key: "documentId", match: { value: documentId } },
+          { key: "tenantId", match: { value: tenantId } },
+        ],
+      },
+    });
+
+    return {
+      operationId: result.operation_id ?? null,
+      status: result.status,
+    };
+  }
+
   async upsert(records: VectorRecord[]): Promise<void> {
     for (let offset = 0; offset < records.length; offset += UPSERT_BATCH_SIZE) {
       const batch = records.slice(offset, offset + UPSERT_BATCH_SIZE);

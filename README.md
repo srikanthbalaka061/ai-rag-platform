@@ -48,6 +48,12 @@ curl -X POST http://localhost:3000/api/documents/ingest \
 Ask questions through `POST /api/rag/ask` with a JSON body containing
 `question` and `tenantId` (optional: `topK` and `scoreThreshold`).
 
+Delete all indexed chunks for a document with
+`DELETE /api/documents/:documentId?tenantId=...`. The Qdrant filter matches both
+`documentId` and `tenantId`, so the operation cannot delete another tenant's
+document chunks. Qdrant is asked to wait for the delete operation before
+returning.
+
 **Deployment requirement:** add authentication and derive `tenantId` and
 `uploadedBy` from the authenticated identity before exposing these endpoints.
 The current API validates those fields but does not authenticate callers.
