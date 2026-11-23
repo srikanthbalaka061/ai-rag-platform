@@ -1,4 +1,5 @@
 import { pipeline } from "@huggingface/transformers";
+import { env } from "../config/env.js";
 
 import type {
   PdfChunk,
@@ -15,7 +16,7 @@ async function getModel(): Promise<FeatureExtractor> {
   if (!extractor) {
     extractor = await pipeline(
       "feature-extraction",
-      "Xenova/all-MiniLM-L6-v2"
+      env.embeddingModel
     );
   }
 

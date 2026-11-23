@@ -7,7 +7,12 @@ export class IngestionRegistry {
   private loaders = new Map<string, DocumentLoader>();
 
   register(extension: string, loader: DocumentLoader): void {
-    this.loaders.set(extension.toLowerCase(), loader);
+    this.loaders.set(extension.replace(/^\./, "").toLowerCase(), loader);
+  }
+
+  supports(fileName: string): boolean {
+    const extension = fileName.split(".").pop()?.toLowerCase();
+    return Boolean(extension && this.loaders.has(extension));
   }
 
   getLoader(source: DocumentSource): DocumentLoader {

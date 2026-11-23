@@ -7,7 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/src/server.js",
-    "test:qdrant": "tsx src/test-qdrant.ts"
+    "test": "tsx --test src/ingestion/chunking/document-chunker.test.ts src/ingestion/core/ingestion.pipeline.test.ts src/ingestion/core/ingestion.registry.test.ts",
+    "test:qdrant": "tsx src/test/test-qdrant.ts"
   },
   "keywords": [],
   "author": "",

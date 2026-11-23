@@ -11,6 +11,7 @@ import type {
 } from "./ingestion.types.js";
 
 import { randomUUID } from "node:crypto";
+import { IngestionError } from "./ingestion.errors.js";
 
 export class IngestionPipeline {
   constructor(
@@ -78,13 +79,11 @@ export class IngestionPipeline {
         status: "completed",
       };
     } catch (error) {
-      console.error("Ingestion failed:", error);
-
-      return {
-        documentId: source.documentId,
-        totalChunks: 0,
-        status: "failed",
-      };
+      throw new IngestionError(
+        `Ingestion failed for document ${source.documentId}`,
+        source.documentId,
+        { cause: error }
+      );
     }
   }
 }
