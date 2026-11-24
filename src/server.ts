@@ -1,18 +1,17 @@
 import express from "express";
-import { env } from "./config/env.js";
-import ragRoutes from "./routes/rag.routes.js";
-import ingestionRoutes from "./routes/ingestion.routes.js";
-import { initializeCollection } from "./vector-store/qdrant.service.js";
+import { env } from "./ai-rag/config/env.js";
+import routes from "./routes.js";
+import { startMarketDataScheduler } from "./market-data/scheduler/market-data.scheduler.js";
+import { initializeCollection } from "./ai-rag/vector-store/qdrant.service.js";
 
 const app = express();
 
 app.use(express.json());
-
-app.use("/api/rag", ragRoutes);
-app.use("/api/documents", ingestionRoutes);
+app.use(routes);
 
 async function startServer(): Promise<void> {
   await initializeCollection();
+  startMarketDataScheduler();
 
   app.listen(env.port, () => {
     console.log(`Server running on http://localhost:${env.port}`);

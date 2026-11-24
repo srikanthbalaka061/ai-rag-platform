@@ -31,10 +31,22 @@ QDRANT_COLLECTION=enterprise_documents
 EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
 EMBEDDING_DIMENSION=384
 GENERATION_MODEL=Xenova/flan-t5-small
+BHARATSTOCK_BASE_URL=https://bharatstockapi.com
+BHARATSTOCK_API_KEY=your-bharatstock-api-key
+BHARATSTOCK_TIMEOUT_MS=10000
+MARKET_DATA_SYNC_TIMEZONE=Asia/Kolkata
+MARKET_DATA_SYNC_PAGE_SIZE=50
+MARKET_DATA_SYNC_MAX_PAGES=100
+MARKET_DATA_API_TOKEN=use-a-random-secret-at-least-32-characters-long
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 ```
 
 The configured embedding model must return vectors matching
 `EMBEDDING_DIMENSION`. The server initializes the Qdrant collection on startup.
+The market-data integration requires a BharatStock API key, a private bearer
+token for callers, and Supabase project credentials. Keep the Supabase
+service-role key server-side; never expose it to clients.
 
 ## API
 
@@ -59,9 +71,56 @@ Delete all indexed chunks for a document with
 document chunks. Qdrant is asked to wait for the delete operation before
 returning.
 
-**Deployment requirement:** add authentication and derive `tenantId` and
-`uploadedBy` from the authenticated identity before exposing these endpoints.
-The current API validates those fields but does not authenticate callers.
+## BharatStock market data
+
+The market-data routes run in the same Express server as the AI/RAG routes.
+Start the application once with `npm run dev`; market data is available under
+`/api/market-data` on the configured `PORT`.
+
+Both AI/RAG and market-data routes use the shared service entry point at
+`src/services/service.ts`. Domain implementations, API clients, repositories,
+and route handlers remain separate.
+
+The scheduler runs every day at 11:00 PM in `MARKET_DATA_SYNC_TIMEZONE`
+(default `Asia/Kolkata`). It fetches every page from the market-wide bulk deals,
+block deals, and insider trades endpoints and saves dated snapshots in
+Supabase. A database lease prevents duplicate scheduled runs across multiple
+server instances. Failed feeds are reported in server logs; the last successful
+snapshot remains available to the UI.
+
+```sh
+curl -H "Authorization: Bearer $MARKET_DATA_API_TOKEN" \
+  "http://localhost:3000/api/market-data/deals/bulk?page=1&page_size=20"
+```
+
+These market-wide UI endpoints read from the latest database snapshot and do
+not call BharatStock on user requests. The response includes provider-style
+JSON; `X-Market-Data-Snapshot-Date` and `X-Market-Data-Fetched-At` identify the
+snapshot returned. Supported calls include:
+
+- `GET /api/market-data/deals/bulk` and `/deals/block`
+- `GET /api/market-data/insider-trades`
+
+Ticker-specific deal endpoints filter the same stored market-wide snapshots.
+Screener calls still fetch BharatStock on demand and save their responses in
+`public.market_data_responses`:
+
+- `GET /api/market-data/screener?filter=pe_ratio.lt.15&page=1&page_size=20`
+- `GET /api/market-data/stocks/:ticker/bulk-deals`, `/block-deals`, and
+  `/insider-trades`
+
+The API key is sent only to BharatStock, and callers must authenticate using
+the configured bearer token. Unsupported paths and non-GET methods are
+rejected. Before the first scheduled run, the market-wide snapshot endpoints
+return `503` because no daily data is available yet.
+
+Apply both SQL migrations in `supabase/migrations/` to the Supabase project
+before starting the service. Row-level security is enabled without client
+policies; server-side reads and writes use the service-role key.
+
+**Deployment requirement:** the existing AI ingestion and RAG endpoints still
+need application authentication; derive `tenantId` and `uploadedBy` from the
+authenticated identity before exposing them.
 
 ## Development
 
