@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MarketDataError } from "./market-data.errors.js";
+import { MarketDataError } from "../core/market-data.errors.js";
 import {
   validateDealQuery,
   validateInsiderTradeQuery,
@@ -22,9 +22,6 @@ test("allows all documented BharatStock endpoint families", () => {
     "stocks/RELIANCE/shareholding",
     "stocks/RELIANCE/mf-holdings",
     "stocks/RELIANCE/corporate-actions",
-    "stocks/RELIANCE/bulk-deals",
-    "stocks/RELIANCE/block-deals",
-    "stocks/RELIANCE/insider-trades",
     "movers",
     "price-shockers",
     "market/fii-dii",
@@ -54,6 +51,9 @@ test("rejects malformed, unsupported, and traversal paths", () => {
     "",
     "admin/keys",
     "stocks/RELIANCE/unknown",
+    "stocks/RELIANCE/bulk-deals",
+    "stocks/RELIANCE/block-deals",
+    "stocks/RELIANCE/insider-trades",
     "stocks/../status",
     "stocks/%2Fadmin",
     "indices/NIFTY%2F50/prices",

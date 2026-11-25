@@ -1,6 +1,6 @@
-import { marketDataConfig } from "../market-data.config.js";
-import { MarketDataError } from "../market-data.errors.js";
-import type { JsonValue } from "../market-data.types.js";
+import { marketDataConfig } from "../config/market-data.config.js";
+import { MarketDataError } from "../core/market-data.errors.js";
+import type { JsonValue } from "../core/market-data.types.js";
 
 function isJsonValue(value: unknown): value is JsonValue {
   if (

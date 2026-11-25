@@ -35,7 +35,6 @@ BHARATSTOCK_BASE_URL=https://bharatstockapi.com
 BHARATSTOCK_API_KEY=your-bharatstock-api-key
 BHARATSTOCK_TIMEOUT_MS=10000
 MARKET_DATA_SYNC_TIMEZONE=Asia/Kolkata
-MARKET_DATA_SYNC_PAGE_SIZE=50
 MARKET_DATA_SYNC_MAX_PAGES=100
 MARKET_DATA_API_TOKEN=use-a-random-secret-at-least-32-characters-long
 SUPABASE_URL=https://your-project.supabase.co
@@ -77,44 +76,59 @@ The market-data routes run in the same Express server as the AI/RAG routes.
 Start the application once with `npm run dev`; market data is available under
 `/api/market-data` on the configured `PORT`.
 
-Both AI/RAG and market-data routes use the shared service entry point at
-`src/services/service.ts`. Domain implementations, API clients, repositories,
-and route handlers remain separate.
+AI/RAG and market-data each keep their routes and service code in their own
+domain folders. Market-data API clients, repositories, validation, and
+database migrations live under `src/market-data/`.
 
-The scheduler runs every day at 11:00 PM in `MARKET_DATA_SYNC_TIMEZONE`
-(default `Asia/Kolkata`). It fetches every page from the market-wide bulk deals,
-block deals, and insider trades endpoints and saves dated snapshots in
-Supabase. A database lease prevents duplicate scheduled runs across multiple
-server instances. Failed feeds are reported in server logs; the last successful
-snapshot remains available to the UI.
+The scheduler runs Monday through Friday at 11:00 PM in
+`MARKET_DATA_SYNC_TIMEZONE` (default `Asia/Kolkata`); Saturday and Sunday runs
+are skipped. Each feed is fetched market-wide with `page_size=200`. The sync
+keeps paging while records match the current date in that timezone, and stops
+when it reaches a record from another date. It stores each deal or insider
+disclosure as its own row in Supabase, along with a per-feed sync marker for the
+date (including days with no records). A database lease prevents duplicate
+scheduled runs across multiple server instances. Failed feeds are reported in
+server logs; the latest successful sync remains available to the UI.
 
 ```sh
 curl -H "Authorization: Bearer $MARKET_DATA_API_TOKEN" \
   "http://localhost:3000/api/market-data/deals/bulk?page=1&page_size=20"
 ```
 
-These market-wide UI endpoints read from the latest database snapshot and do
-not call BharatStock on user requests. The response includes provider-style
-JSON; `X-Market-Data-Snapshot-Date` and `X-Market-Data-Fetched-At` identify the
-snapshot returned. Supported calls include:
+These market-wide UI endpoints read saved records and do not call BharatStock
+on user requests. Responses include `snapshot_date` in the JSON body;
+`X-Market-Data-Snapshot-Date` and `X-Market-Data-Fetched-At` identify the
+returned sync. Supported calls include:
 
 - `GET /api/market-data/deals/bulk` and `/deals/block`
 - `GET /api/market-data/insider-trades`
 
-Ticker-specific deal endpoints filter the same stored market-wide snapshots.
+The same endpoints support `symbol`, `buyer`, `seller`, `client_name`,
+`buy_sell`, and date filters. Use `range=week` or `range=month` for the last
+7 or 30 calendar days, or `range=custom&from=YYYY-MM-DD&to=YYYY-MM-DD` for a
+specific range. Without a range, the endpoint returns the latest synced date.
+Name filters are case-insensitive partial matches. For bulk and block deals,
+`buyer`/`seller` select `client_name` records on the matching `buy_sell` side;
+for insider trades, they map to acquisition/disposal disclosures.
+For example:
+
+```text
+/api/market-data/deals/bulk?symbol=RELIANCE&buyer=Fund&buy_sell=BUY&range=week
+/api/market-data/deals/block?client_name=Mutual%20Fund&from=2026-11-01&to=2026-11-25
+/api/market-data/insider-trades?symbol=INFY&transaction_type=acquisition&range=month
+```
+
 Screener calls still fetch BharatStock on demand and save their responses in
 `public.market_data_responses`:
 
 - `GET /api/market-data/screener?filter=pe_ratio.lt.15&page=1&page_size=20`
-- `GET /api/market-data/stocks/:ticker/bulk-deals`, `/block-deals`, and
-  `/insider-trades`
 
 The API key is sent only to BharatStock, and callers must authenticate using
 the configured bearer token. Unsupported paths and non-GET methods are
-rejected. Before the first scheduled run, the market-wide snapshot endpoints
+rejected. Before the first scheduled run, the market-wide endpoints
 return `503` because no daily data is available yet.
 
-Apply both SQL migrations in `supabase/migrations/` to the Supabase project
+Apply all SQL migrations in `src/market-data/supabase/migrations/` to the Supabase project
 before starting the service. Row-level security is enabled without client
 policies; server-side reads and writes use the service-role key.
 

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "./market-data.types.js";
+import type { Database } from "../core/market-data.types.js";
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -43,7 +43,7 @@ export const marketDataConfig = {
   apiKey: getRequiredEnv("BHARATSTOCK_API_KEY"),
   clientToken: getRequiredEnv("MARKET_DATA_API_TOKEN"),
   timeoutMs: Number(process.env.BHARATSTOCK_TIMEOUT_MS ?? 10_000),
-  syncPageSize: Number(process.env.MARKET_DATA_SYNC_PAGE_SIZE ?? 50),
+  syncPageSize: 200 as const,
   syncMaxPages: Number(process.env.MARKET_DATA_SYNC_MAX_PAGES ?? 100),
   scheduleTimezone:
     process.env.MARKET_DATA_SYNC_TIMEZONE?.trim() || "Asia/Kolkata",
@@ -61,14 +61,6 @@ if (
   marketDataConfig.timeoutMs > 60_000
 ) {
   throw new Error("BHARATSTOCK_TIMEOUT_MS must be between 1000 and 60000");
-}
-
-if (
-  !Number.isInteger(marketDataConfig.syncPageSize) ||
-  marketDataConfig.syncPageSize < 1 ||
-  marketDataConfig.syncPageSize > 100
-) {
-  throw new Error("MARKET_DATA_SYNC_PAGE_SIZE must be between 1 and 100");
 }
 
 if (

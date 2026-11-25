@@ -23,11 +23,20 @@ export type DailyMarketDataDataset =
   | "block_deals"
   | "insider_trades";
 
-export type DailyMarketDataSnapshot = {
+export type DailyMarketDataRecord = {
+  dataset: DailyMarketDataDataset;
+  market_date: string;
+  record_hash: string;
+  record_order: number;
+  record_body: JsonValue;
+  fetched_at: string;
+  created_at: string;
+};
+
+export type DailyMarketDataSync = {
   dataset: DailyMarketDataDataset;
   snapshot_date: string;
   source_endpoint: string;
-  response_body: JsonValue;
   fetched_at: string;
   created_at: string;
   updated_at: string;
@@ -50,15 +59,16 @@ export interface Database {
         >;
         Relationships: [];
       };
-      market_data_daily_snapshots: {
-        Row: DailyMarketDataSnapshot;
-        Insert: Omit<
-          DailyMarketDataSnapshot,
-          "created_at" | "updated_at"
-        >;
-        Update: Partial<
-          Omit<DailyMarketDataSnapshot, "created_at" | "updated_at">
-        >;
+      market_data_daily_records: {
+        Row: DailyMarketDataRecord;
+        Insert: Omit<DailyMarketDataRecord, "created_at">;
+        Update: Partial<Omit<DailyMarketDataRecord, "created_at">>;
+        Relationships: [];
+      };
+      market_data_daily_syncs: {
+        Row: DailyMarketDataSync;
+        Insert: Omit<DailyMarketDataSync, "created_at" | "updated_at">;
+        Update: Partial<Omit<DailyMarketDataSync, "created_at" | "updated_at">>;
         Relationships: [];
       };
       market_data_job_locks: {

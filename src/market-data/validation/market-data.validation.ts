@@ -1,10 +1,10 @@
-import { MarketDataError } from "./market-data.errors.js";
+import { MarketDataError } from "../core/market-data.errors.js";
 
 const allowedEndpoints = [
   /^stocks$/,
   /^stocks\/(?:compare|quotes)$/,
   /^stocks\/[A-Za-z0-9._-]+$/,
-  /^stocks\/[A-Za-z0-9._-]+\/(?:prices|financials|ratios|technical-indicators|shareholding|mf-holdings|corporate-actions|bulk-deals|block-deals|insider-trades)$/,
+  /^stocks\/[A-Za-z0-9._-]+\/(?:prices|financials|ratios|technical-indicators|shareholding|mf-holdings|corporate-actions)$/,
   /^movers$/,
   /^price-shockers$/,
   /^market\/fii-dii$/,

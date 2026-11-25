@@ -1,6 +1,6 @@
 import { Router } from "express";
 import aiRagRoutes from "./ai-rag/routes.js";
-import marketDataRoutes from "./market-data/routes.js";
+import marketDataRoutes from "./market-data/routes/index.js";
 
 const router = Router();
 

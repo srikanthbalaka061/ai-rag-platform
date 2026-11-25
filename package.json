@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/src/server.js",
-    "test": "tsx --test src/ingestion/chunking/document-chunker.test.ts src/ingestion/core/ingestion.pipeline.test.ts src/ingestion/core/ingestion.registry.test.ts src/market-data/market-data.validation.test.ts src/market-data/daily-market-data.utils.test.ts",
+    "test": "tsx --test src/ingestion/chunking/document-chunker.test.ts src/ingestion/core/ingestion.pipeline.test.ts src/ingestion/core/ingestion.registry.test.ts src/market-data/validation/market-data.validation.test.ts src/market-data/utils/daily-market-data.utils.test.ts",
     "test:qdrant": "tsx src/test/test-qdrant.ts"
   },
   "keywords": [],

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { askQuestion } from "../../market-data/services/service.js";
+import { askQuestion } from "../rag/rag.service.js";
 
 const router = Router();
 

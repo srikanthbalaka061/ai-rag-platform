@@ -1,5 +1,3 @@
-export { askQuestion } from "../../ai-rag/rag/rag.service.js";
-
 export {
   getSavedMarketData,
   requestMarketData,

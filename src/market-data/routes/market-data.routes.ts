@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { MarketDataError } from "../market-data.errors.js";
+import { MarketDataError } from "../core/market-data.errors.js";
 import {
   marketDataAuthenticationMiddleware,
   marketDataErrorMiddleware,
@@ -11,14 +11,14 @@ import {
   getSavedMarketData,
   requestMarketData,
   screenStocks,
-} from "../services/service.js";
-import { resolveMarketDataEndpoint } from "../market-data.validation.js";
+} from "../services/index.js";
+import { resolveMarketDataEndpoint } from "../validation/market-data.validation.js";
 import {
   validateDealQuery,
   validateInsiderTradeQuery,
   validateScreenerQuery,
-  validateStockSymbol,
-} from "../market-data.requests.js";
+} from "../validation/market-data.requests.js";
+import type { DailyMarketDataDataset } from "../core/market-data.types.js";
 
 const router = Router();
 const cacheKeySchema = z.string().regex(/^[a-f0-9]{64}$/i);
@@ -79,6 +79,20 @@ function sendDailySnapshot(
   response.status(200).json(snapshot.response);
 }
 
+async function sendDailyMarketData(
+  dataset: DailyMarketDataDataset,
+  request: Request,
+  response: Response
+): Promise<void> {
+  const query = requestQuery(request);
+  if (dataset === "insider_trades") {
+    validateInsiderTradeQuery(query);
+  } else {
+    validateDealQuery(query);
+  }
+  sendDailySnapshot(response, await getLatestDailyMarketData(dataset, query));
+}
+
 router.use(marketDataRequestMiddleware);
 router.use(marketDataAuthenticationMiddleware);
 
@@ -95,66 +109,21 @@ router.get("/cache/:cacheKey", async (request, response) => {
 });
 
 router.get("/deals/bulk", async (request, response) => {
-  const query = requestQuery(request);
-  validateDealQuery(query);
-  sendDailySnapshot(
-    response,
-    await getLatestDailyMarketData("bulk_deals", query)
-  );
+  await sendDailyMarketData("bulk_deals", request, response);
 });
 
 router.get("/deals/block", async (request, response) => {
-  const query = requestQuery(request);
-  validateDealQuery(query);
-  sendDailySnapshot(
-    response,
-    await getLatestDailyMarketData("block_deals", query)
-  );
+  await sendDailyMarketData("block_deals", request, response);
 });
 
 router.get("/insider-trades", async (request, response) => {
-  const query = requestQuery(request);
-  validateInsiderTradeQuery(query);
-  sendDailySnapshot(
-    response,
-    await getLatestDailyMarketData("insider_trades", query)
-  );
+  await sendDailyMarketData("insider_trades", request, response);
 });
 
 router.get("/screener", async (request, response) => {
   const query = requestQuery(request);
   validateScreenerQuery(query);
   sendFreshResponse(response, await screenStocks(query));
-});
-
-router.get("/stocks/:ticker/bulk-deals", async (request, response) => {
-  const query = requestQuery(request);
-  validateDealQuery(query);
-  const symbol = validateStockSymbol(request.params.ticker);
-  sendDailySnapshot(
-    response,
-    await getLatestDailyMarketData("bulk_deals", query, symbol)
-  );
-});
-
-router.get("/stocks/:ticker/block-deals", async (request, response) => {
-  const query = requestQuery(request);
-  validateDealQuery(query);
-  const symbol = validateStockSymbol(request.params.ticker);
-  sendDailySnapshot(
-    response,
-    await getLatestDailyMarketData("block_deals", query, symbol)
-  );
-});
-
-router.get("/stocks/:ticker/insider-trades", async (request, response) => {
-  const query = requestQuery(request);
-  validateInsiderTradeQuery(query);
-  const symbol = validateStockSymbol(request.params.ticker);
-  sendDailySnapshot(
-    response,
-    await getLatestDailyMarketData("insider_trades", query, symbol)
-  );
 });
 
 router.get(/.*/, async (request, response: Response) => {

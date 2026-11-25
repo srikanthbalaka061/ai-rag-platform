@@ -1,11 +1,12 @@
-import { supabase } from "../market-data.config.js";
-import { MarketDataError } from "../market-data.errors.js";
+import { supabase } from "../config/market-data.config.js";
+import { MarketDataError } from "../core/market-data.errors.js";
 import type {
   DailyMarketDataDataset,
-  DailyMarketDataSnapshot,
+  DailyMarketDataRecord,
+  DailyMarketDataSync,
   JsonValue,
   MarketDataRecord,
-} from "../market-data.types.js";
+} from "../core/market-data.types.js";
 
 export interface SaveMarketDataInput {
   requestHash: string;
@@ -63,47 +64,80 @@ export async function findMarketData(
   return data;
 }
 
-export interface SaveDailyMarketDataSnapshotInput {
+export interface SaveDailyMarketDataRecordsInput {
   dataset: DailyMarketDataDataset;
   snapshotDate: string;
   sourceEndpoint: string;
-  response: JsonValue;
+  records: Array<{ recordHash: string; record: JsonValue; recordOrder: number }>;
   fetchedAt: string;
 }
 
-export async function saveDailyMarketDataSnapshot(
-  input: SaveDailyMarketDataSnapshotInput
+export async function saveDailyMarketDataRecords(
+  input: SaveDailyMarketDataRecordsInput
 ): Promise<void> {
-  const { error } = await supabase
-    .from("market_data_daily_snapshots")
-    .upsert(
-      {
-        dataset: input.dataset,
-        snapshot_date: input.snapshotDate,
-        source_endpoint: input.sourceEndpoint,
-        response_body: input.response,
-        fetched_at: input.fetchedAt,
-      },
-      { onConflict: "dataset,snapshot_date" }
-    );
+  const databaseRecords = input.records.map(({ recordHash, record, recordOrder }) => ({
+    dataset: input.dataset,
+    market_date: input.snapshotDate,
+    record_hash: recordHash,
+    record_order: recordOrder,
+    record_body: record,
+    fetched_at: input.fetchedAt,
+  }));
 
+  for (let offset = 0; offset < databaseRecords.length; offset += 500) {
+    const { error } = await supabase
+      .from("market_data_daily_records")
+      .upsert(databaseRecords.slice(offset, offset + 500), {
+        onConflict: "dataset,market_date,record_hash",
+      });
+    if (error) {
+      throw new MarketDataError(
+        `Failed to save daily ${input.dataset} records`,
+        500,
+        "DAILY_RECORDS_WRITE_FAILED",
+        { cause: error }
+      );
+    }
+  }
+
+  const { error } = await supabase.from("market_data_daily_syncs").upsert(
+    {
+      dataset: input.dataset,
+      snapshot_date: input.snapshotDate,
+      source_endpoint: input.sourceEndpoint,
+      fetched_at: input.fetchedAt,
+    },
+    { onConflict: "dataset,snapshot_date" }
+  );
   if (error) {
     throw new MarketDataError(
-      `Failed to save the daily ${input.dataset} snapshot`,
+      `Failed to save the daily ${input.dataset} sync status`,
       500,
-      "DAILY_SNAPSHOT_WRITE_FAILED",
+      "DAILY_SYNC_STATUS_WRITE_FAILED",
       { cause: error }
     );
   }
 }
 
-export async function findLatestDailyMarketDataSnapshot(
-  dataset: DailyMarketDataDataset
-): Promise<DailyMarketDataSnapshot | null> {
-  const { data, error } = await supabase
-    .from("market_data_daily_snapshots")
+export interface DailyMarketDataDateRange {
+  from: string;
+  to: string;
+}
+
+export async function findDailyMarketData(
+  dataset: DailyMarketDataDataset,
+  dateRange?: DailyMarketDataDateRange
+): Promise<{ sync: DailyMarketDataSync; records: DailyMarketDataRecord[] } | null> {
+  let syncQuery = supabase
+    .from("market_data_daily_syncs")
     .select("*")
-    .eq("dataset", dataset)
+    .eq("dataset", dataset);
+  if (dateRange) {
+    syncQuery = syncQuery
+      .gte("snapshot_date", dateRange.from)
+      .lte("snapshot_date", dateRange.to);
+  }
+  const { data, error } = await syncQuery
     .order("snapshot_date", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -116,7 +150,38 @@ export async function findLatestDailyMarketDataSnapshot(
       { cause: error }
     );
   }
-  return data;
+  if (!data) return null;
+
+  const records: DailyMarketDataRecord[] = [];
+  const pageSize = 1_000;
+  for (let offset = 0; ; offset += pageSize) {
+    let recordsQuery = supabase
+      .from("market_data_daily_records")
+      .select("*")
+      .eq("dataset", dataset);
+    if (dateRange) {
+      recordsQuery = recordsQuery
+        .gte("market_date", dateRange.from)
+        .lte("market_date", dateRange.to);
+    } else {
+      recordsQuery = recordsQuery.eq("market_date", data.snapshot_date);
+    }
+    const page = await recordsQuery
+      .order("market_date", { ascending: false })
+      .order("record_order", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (page.error) {
+      throw new MarketDataError(
+        `Failed to read daily ${dataset} records`,
+        500,
+        "DAILY_RECORDS_READ_FAILED",
+        { cause: page.error }
+      );
+    }
+    records.push(...page.data);
+    if (page.data.length < pageSize) break;
+  }
+  return { sync: data, records };
 }
 
 export async function acquireMarketDataJobLock(

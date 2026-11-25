@@ -1,14 +1,15 @@
-import { marketDataConfig } from "../market-data.config.js";
-import { MarketDataError } from "../market-data.errors.js";
-import { paginateDailyMarketData } from "../daily-market-data.utils.js";
+import { createHash } from "node:crypto";
+import { marketDataConfig } from "../config/market-data.config.js";
+import { MarketDataError } from "../core/market-data.errors.js";
+import { paginateDailyMarketData } from "../utils/daily-market-data.utils.js";
 import { fetchBharatStock } from "../api/bharatstock.client.js";
 import type {
   DailyMarketDataDataset,
   JsonValue,
-} from "../market-data.types.js";
+} from "../core/market-data.types.js";
 import {
-  findLatestDailyMarketDataSnapshot,
-  saveDailyMarketDataSnapshot,
+  findDailyMarketData,
+  saveDailyMarketDataRecords,
 } from "../repositories/market-data.repository.js";
 
 type JsonObject = { [key: string]: JsonValue };
@@ -16,18 +17,22 @@ type JsonObject = { [key: string]: JsonValue };
 const feeds: Array<{
   dataset: DailyMarketDataDataset;
   endpoint: string;
+  dateField: string;
 }> = [
   {
     dataset: "bulk_deals",
     endpoint: "deals/bulk",
+    dateField: "deal_date",
   },
   {
     dataset: "block_deals",
     endpoint: "deals/block",
+    dateField: "deal_date",
   },
   {
     dataset: "insider_trades",
     endpoint: "insider-trades",
+    dateField: "intimation_date",
   },
 ];
 
@@ -62,57 +67,15 @@ function getPagination(
   return { body: response, rows, pagination };
 }
 
-function getNonNegativeInteger(value: JsonValue | undefined): number | null {
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
-    return value;
-  }
-  if (typeof value === "string" && /^\d+$/.test(value)) {
-    const parsed = Number(value);
-    return Number.isSafeInteger(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-async function fetchCompleteFeed(endpoint: string): Promise<JsonValue> {
+async function fetchCurrentDateFeed(
+  endpoint: string,
+  snapshotDate: string,
+  dateField: string
+): Promise<JsonValue[]> {
   const pageSize = marketDataConfig.syncPageSize;
-  const firstPageQuery = new URLSearchParams({
-    page: "1",
-    page_size: String(pageSize),
-  });
-  const firstResponse = await fetchPageWithRetry(endpoint, firstPageQuery);
-  const firstPage = getPagination(firstResponse);
-  const totalItems = getNonNegativeInteger(firstPage.pagination.total_items);
-  if (totalItems === null) {
-    throw new MarketDataError(
-      "BharatStock pagination.total_items is missing or invalid",
-      502,
-      "UPSTREAM_INVALID_RESPONSE"
-    );
-  }
-
-  const actualPageSize =
-    getNonNegativeInteger(firstPage.pagination.page_size) ??
-    (firstPage.rows.length > 0 ? firstPage.rows.length : pageSize);
-  if (actualPageSize < 1) {
-    throw new MarketDataError(
-      "BharatStock returned an invalid page size",
-      502,
-      "UPSTREAM_INVALID_RESPONSE"
-    );
-  }
-
-  const totalPages = Math.max(1, Math.ceil(totalItems / actualPageSize));
-  if (totalPages > marketDataConfig.syncMaxPages) {
-    throw new MarketDataError(
-      `BharatStock feed exceeds the configured page limit (${marketDataConfig.syncMaxPages})`,
-      502,
-      "SYNC_PAGE_LIMIT_EXCEEDED"
-    );
-  }
-
-  const rows = [...firstPage.rows];
-  let responseBytes = Buffer.byteLength(JSON.stringify(firstPage.body), "utf8");
-  for (let page = 2; page <= totalPages; page += 1) {
+  const rows: JsonValue[] = [];
+  let responseBytes = 0;
+  for (let page = 1; page <= marketDataConfig.syncMaxPages; page += 1) {
     const query = new URLSearchParams({
       page: String(page),
       page_size: String(pageSize),
@@ -130,33 +93,37 @@ async function fetchCompleteFeed(endpoint: string): Promise<JsonValue> {
         "SYNC_SNAPSHOT_TOO_LARGE"
       );
     }
-    rows.push(...currentPage.rows);
-  }
+    if (currentPage.rows.length === 0) return rows;
 
-  if (responseBytes > marketDataConfig.maxSnapshotBytes) {
-    throw new MarketDataError(
-      "BharatStock feed exceeds the configured snapshot size limit",
-      502,
-      "SYNC_SNAPSHOT_TOO_LARGE"
-    );
-  }
+    for (const row of currentPage.rows) {
+      if (!isJsonObject(row)) {
+        throw new MarketDataError(
+          `BharatStock returned an invalid ${endpoint} record`,
+          502,
+          "UPSTREAM_INVALID_RESPONSE"
+        );
+      }
+      const rowDate = row[dateField];
+      if (typeof rowDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(rowDate)) {
+        throw new MarketDataError(
+          `BharatStock ${endpoint} record is missing a valid ${dateField}`,
+          502,
+          "UPSTREAM_INVALID_RESPONSE"
+        );
+      }
+      if (rowDate !== snapshotDate) return rows;
+      rows.push(row);
+    }
 
-  if (rows.length !== totalItems) {
-    throw new MarketDataError(
-      `BharatStock returned ${rows.length} of ${totalItems} expected records`,
-      502,
-      "INCOMPLETE_UPSTREAM_FEED"
-    );
+    if (page === marketDataConfig.syncMaxPages) {
+      throw new MarketDataError(
+        `BharatStock feed reached the configured page limit (${marketDataConfig.syncMaxPages}) before reaching an older date`,
+        502,
+        "SYNC_PAGE_LIMIT_EXCEEDED"
+      );
+    }
   }
-
-  const pagination: JsonObject = {
-    ...firstPage.pagination,
-    page: 1,
-    page_size: actualPageSize,
-    total_items: rows.length,
-    total_pages: totalPages,
-  };
-  return { ...firstPage.body, data: rows, pagination };
+  return rows;
 }
 
 async function fetchPageWithRetry(
@@ -207,13 +174,24 @@ export async function syncDailyMarketData(): Promise<void> {
   );
   const results = await Promise.allSettled(
     feeds.map(async (feed) => {
-      const response = await fetchCompleteFeed(feed.endpoint);
-      await saveDailyMarketDataSnapshot({
+      const records = await fetchCurrentDateFeed(
+        feed.endpoint,
+        snapshotDate,
+        feed.dateField
+      );
+      const fetchedAt = new Date().toISOString();
+      await saveDailyMarketDataRecords({
         dataset: feed.dataset,
         snapshotDate,
         sourceEndpoint: `/v1/${feed.endpoint}`,
-        response,
-        fetchedAt: new Date().toISOString(),
+        records: records.map((record, recordOrder) => ({
+          recordHash: createHash("sha256")
+            .update(JSON.stringify(record))
+            .digest("hex"),
+          recordOrder,
+          record,
+        })),
+        fetchedAt,
       });
     })
   );
@@ -222,7 +200,7 @@ export async function syncDailyMarketData(): Promise<void> {
   );
   if (failures.length > 0) {
     throw new MarketDataError(
-      `Nightly market-data sync failed for: ${failures.join(", ")}`,
+      `Current-date market-data sync failed for: ${failures.join(", ")}`,
       500,
       "DAILY_SYNC_PARTIAL_FAILURE",
       {
@@ -243,20 +221,52 @@ export interface DailyMarketDataResponse {
 
 export async function getLatestDailyMarketData(
   dataset: DailyMarketDataDataset,
-  query: URLSearchParams,
-  symbol?: string
+  query: URLSearchParams
 ): Promise<DailyMarketDataResponse> {
-  const snapshot = await findLatestDailyMarketDataSnapshot(dataset);
-  if (!snapshot) {
+  const range = resolveDateRange(query);
+  const dailyData = await findDailyMarketData(dataset, range);
+  if (!dailyData) {
     throw new MarketDataError(
-      `No nightly ${dataset.replace("_", " ")} data is available yet`,
+      `No daily ${dataset.replace("_", " ")} data is available yet`,
       503,
       "DAILY_SNAPSHOT_NOT_AVAILABLE"
     );
   }
-  return {
-    snapshotDate: snapshot.snapshot_date,
-    fetchedAt: snapshot.fetched_at,
-    response: paginateDailyMarketData(snapshot.response_body, query, symbol),
+  const rows = dailyData.records.map(({ record_body }) => record_body);
+  const dateRange = range ?? {
+    from: dailyData.sync.snapshot_date,
+    to: dailyData.sync.snapshot_date,
   };
+  const response: JsonValue = {
+    snapshot_date: dailyData.sync.snapshot_date,
+    date_range: dateRange,
+    data: rows,
+    pagination: {
+      page: 1,
+      page_size: rows.length,
+      total_items: rows.length,
+      total_pages: rows.length === 0 ? 0 : 1,
+    },
+  };
+  return {
+    snapshotDate: dailyData.sync.snapshot_date,
+    fetchedAt: dailyData.sync.fetched_at,
+    response: paginateDailyMarketData(response, query),
+  };
+}
+
+function resolveDateRange(
+  query: URLSearchParams
+): { from: string; to: string } | undefined {
+  const range = query.get("range");
+  if (range === "custom" || (!range && query.has("from") && query.has("to"))) {
+    return { from: query.get("from")!, to: query.get("to")! };
+  }
+  if (range !== "week" && range !== "month") return undefined;
+
+  const to = getDateInTimezone(new Date(), marketDataConfig.scheduleTimezone);
+  const days = range === "week" ? 7 : 30;
+  const fromDate = new Date(`${to}T00:00:00.000Z`);
+  fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
+  return { from: fromDate.toISOString().slice(0, 10), to };
 }

@@ -4,8 +4,8 @@ import type {
   RequestHandler,
   Response,
 } from "express";
-import { MarketDataError } from "../market-data.errors.js";
-import { marketDataConfig } from "../market-data.config.js";
+import { MarketDataError } from "../core/market-data.errors.js";
+import { marketDataConfig } from "../config/market-data.config.js";
 
 export const marketDataRequestMiddleware: RequestHandler = (
   _request,

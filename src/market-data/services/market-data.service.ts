@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { fetchBharatStock } from "../api/bharatstock.client.js";
-import { MarketDataError } from "../market-data.errors.js";
-import type { JsonValue, MarketDataResult } from "../market-data.types.js";
+import { MarketDataError } from "../core/market-data.errors.js";
+import type { JsonValue, MarketDataResult } from "../core/market-data.types.js";
 import {
   findMarketData,
   saveMarketData,

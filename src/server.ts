@@ -13,8 +13,8 @@ async function startServer(): Promise<void> {
   await initializeCollection();
   startMarketDataScheduler();
 
-  app.listen(env.port, () => {
-    console.log(`Server running on http://localhost:${env.port}`);
+  app.listen(() => {
+    console.log(`Server running`);
   });
 }
 
