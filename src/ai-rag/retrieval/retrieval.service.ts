@@ -15,7 +15,6 @@ export interface RetrievedChunk {
 export interface RetrievalOptions {
   topK?: number;
   scoreThreshold?: number;
-  tenantId: string;
 }
 
 export async function retrieveDocuments(
@@ -34,16 +33,6 @@ export async function retrieveDocuments(
       limit: options.topK ?? 5,
       with_payload: true,
       score_threshold: options.scoreThreshold,
-      filter: {
-        must: [
-          {
-            key: "tenantId",
-            match: {
-              value: options.tenantId,
-            },
-          },
-        ],
-      },
     }
   );
 

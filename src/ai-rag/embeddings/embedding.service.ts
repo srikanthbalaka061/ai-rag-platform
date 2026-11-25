@@ -95,3 +95,7 @@ export async function generatePdfEmbeddings(
 export async function generateEmbedding(text: string): Promise<number[]> {
   return embeddings.embedQuery(text);
 }
+
+export async function initializeEmbeddingModel(): Promise<void> {
+  await getExtractor();
+}

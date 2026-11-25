@@ -1,33 +1,39 @@
 import { retrieveDocuments } from "../retrieval/retrieval.service.js";
 import { createRagPrompt } from "./prompt.service.js";
-import { generateAnswer } from "../llm/local-llm.service.js";
+import { initializeEmbeddingModel } from "../embeddings/embedding.service.js";
+import {
+  generateAnswer,
+  initializeTextGenerator,
+} from "../llm/local-llm.service.js";
 
 export interface AskQuestionInput {
   question: string;
-  tenantId: string;
   topK?: number;
   scoreThreshold?: number;
 }
 
-export async function askQuestion(input: AskQuestionInput) {
+export async function initializeRagModels(): Promise<void> {
+  await initializeEmbeddingModel();
+  await initializeTextGenerator();
+}
 
-  if (!input.question.trim()) {
+export async function askQuestion(input: AskQuestionInput) {
+  const question = input.question.trim();
+  if (!question) {
     throw new Error("Question is required");
   }
 
-  // STEP 1: Retrieve relevant chunks
   const chunks = await retrieveDocuments(
-    input.question,
+    question,
     {
-      tenantId: input.tenantId,
-      topK: input.topK ?? 5,
+      topK: input.topK ?? 3,
       scoreThreshold: input.scoreThreshold,
     }
   );
 
   if (chunks.length === 0) {
     return {
-      question: input.question,
+      question,
       answer: "I couldn't find relevant information in the available documents.",
       sources: [],
     };
@@ -42,11 +48,11 @@ export async function askQuestion(input: AskQuestionInput) {
     relevanceScore: chunk.score,
   }));
 
-  const prompt = createRagPrompt(input.question, chunks);
+  const prompt = createRagPrompt(question, chunks);
   const answer = await generateAnswer(prompt);
 
   return {
-    question: input.question,
+    question,
     answer,
     sources,
     retrievedChunks: chunks.length,

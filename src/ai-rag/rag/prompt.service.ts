@@ -4,18 +4,23 @@ export function createRagPrompt(
   question: string,
   chunks: RetrievedChunk[]
 ): string {
-  const context = chunks.map((chunk, index) => `
-Excerpt ${index + 1}:
-${chunk.content}
-`).join("\n------------------------\n");
+  const instruction =
+    "Answer using only the context. Be concise. If the context does not contain the answer, say so.\n\nContext:\n";
+  const questionBlock = `\n\nQuestion: ${question}\nAnswer:`;
+  const maxPromptCharacters = 2_000;
+  let remainingContextCharacters = Math.max(
+    0,
+    maxPromptCharacters - instruction.length - questionBlock.length
+  );
+  const contextParts: string[] = [];
 
-  return `Answer the question using only the context below.
-Write a concise answer in natural language. Do not output excerpt labels, source numbers, document metadata, or the context itself.
-If the context does not contain the answer, say that the documents do not provide the answer.
+  for (const chunk of chunks) {
+    if (remainingContextCharacters <= 0) break;
+    const excerpt = chunk.content.slice(0, remainingContextCharacters).trim();
+    if (!excerpt) continue;
+    contextParts.push(excerpt);
+    remainingContextCharacters -= excerpt.length + 2;
+  }
 
-Context:
-${context}
-
-Question: ${question}
-Answer:`;
+  return `${instruction}${contextParts.join("\n\n")}${questionBlock}`;
 }

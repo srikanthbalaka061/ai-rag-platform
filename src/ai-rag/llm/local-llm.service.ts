@@ -24,7 +24,7 @@ function getGenerator(): Promise<TextGenerator> {
 export async function generateAnswer(prompt: string): Promise<string> {
   const generator = await getGenerator();
   const results = await generator(prompt, {
-    max_new_tokens: 256,
+    max_new_tokens: 128,
     do_sample: false,
   });
   const answer = results[0]?.generated_text.trim();
@@ -34,4 +34,8 @@ export async function generateAnswer(prompt: string): Promise<string> {
   }
 
   return answer;
+}
+
+export async function initializeTextGenerator(): Promise<void> {
+  await getGenerator();
 }

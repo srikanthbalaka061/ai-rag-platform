@@ -62,7 +62,8 @@ curl -X POST http://localhost:3000/api/documents/ingest \
 ```
 
 Ask questions through `POST /api/rag/ask` with a JSON body containing
-`question` and `tenantId` (optional: `topK` and `scoreThreshold`).
+`question` (optional: `topK` and `scoreThreshold`). The ask endpoint searches
+all indexed documents and does not require a `tenantId`.
 
 Delete all indexed chunks for a document with
 `DELETE /api/documents/:documentId?tenantId=...`. The Qdrant filter matches both
