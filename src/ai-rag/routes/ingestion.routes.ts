@@ -6,6 +6,7 @@ import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { ingestionService } from "../ingestion/ingestion.service.js";
+import { DuplicateDocumentError } from "../ingestion/core/ingestion.errors.js";
 
 const router = Router();
 const MAX_UPLOAD_SIZE = 25 * 1024 * 1024;
@@ -38,6 +39,7 @@ const uploadMiddleware: RequestHandler = (req, res, next) => {
 };
 
 const ingestSchema = z.object({
+  documentId: z.string().trim().min(1).max(128),
   tenantId: z.string().trim().min(1).max(128),
   uploadedBy: z.string().trim().min(1).max(128),
   tags: z.string().optional(),
@@ -66,7 +68,7 @@ router.post("/ingest", uploadMiddleware, async (req, res) => {
     }
 
     const result = await ingestionService.ingestDocument({
-      documentId: randomUUID(),
+      documentId: validation.data.documentId,
       filePath: req.file.path,
       fileName,
       mimeType: req.file.mimetype,
@@ -80,6 +82,15 @@ router.post("/ingest", uploadMiddleware, async (req, res) => {
 
     res.status(201).json(result);
   } catch (error) {
+    if (error instanceof DuplicateDocumentError) {
+      res.status(409).json({
+        code: "DOCUMENT_ID_ALREADY_EXISTS",
+        message: "This documentId already exists for the specified tenant.",
+        documentId: error.documentId,
+      });
+      return;
+    }
+
     console.error("Document ingestion failed:", error);
     res.status(500).json({ message: "Failed to ingest document" });
   } finally {

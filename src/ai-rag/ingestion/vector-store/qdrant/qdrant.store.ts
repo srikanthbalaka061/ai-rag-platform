@@ -8,6 +8,21 @@ import type {
 const UPSERT_BATCH_SIZE = 64;
 
 export class QdrantVectorStore implements VectorStore {
+  async documentExists(documentId: string, tenantId: string): Promise<boolean> {
+    const result = await qdrantClient.scroll(env.qdrantCollection, {
+      limit: 1,
+      with_payload: false,
+      with_vector: false,
+      filter: {
+        must: [
+          { key: "documentId", match: { value: documentId } },
+          { key: "tenantId", match: { value: tenantId } },
+        ],
+      },
+    });
+    return result.points.length > 0;
+  }
+
   async deleteDocumentChunks(
     documentId: string,
     tenantId: string

@@ -6,6 +6,7 @@ async function main() {
     console.log("Starting PDF ingestion...");
 
     const result = await ingestPdf({
+      documentId: "tenant-001-pdf-test",
       filePath: "./data/documents/Guidelines_for_Quarterly_Payout_of_Variable_Pay.pdf",
       fileName: "Guidelines_for_Quarterly_Payout_of_Variable_Pay.pdf",
       tenantId: "tenant-001",

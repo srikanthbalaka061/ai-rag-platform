@@ -6,26 +6,41 @@ import type {
   ExtractedDocument,
 } from "../core/ingestion.types.js";
 
-const CHUNK_SIZE = 1200;
-const CHUNK_OVERLAP = 200;
+const CHUNK_SIZE = 1_000;
+const CHUNK_OVERLAP = 150;
 
 export class DocumentChunker implements DocumentChunkerContract {
-  private readonly splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: CHUNK_SIZE,
-    chunkOverlap: CHUNK_OVERLAP,
-  });
-
   async chunk(document: ExtractedDocument): Promise<DocumentChunk[]> {
-    const contents = await this.splitter.splitText(document.content);
+    const extension = String(document.metadata.fileExtension ?? "").toLowerCase();
+    const splitter =
+      extension === ".md" || extension === ".markdown"
+        ? RecursiveCharacterTextSplitter.fromLanguage("markdown", {
+            chunkSize: CHUNK_SIZE,
+            chunkOverlap: CHUNK_OVERLAP,
+          })
+        : extension === ".html" || extension === ".htm"
+          ? RecursiveCharacterTextSplitter.fromLanguage("html", {
+              chunkSize: CHUNK_SIZE,
+              chunkOverlap: CHUNK_OVERLAP,
+            })
+          : new RecursiveCharacterTextSplitter({
+              chunkSize: CHUNK_SIZE,
+              chunkOverlap: CHUNK_OVERLAP,
+            });
+    const contents = await splitter.splitText(document.content.trim());
 
     return contents
-      .filter((content) => content.trim().length > 0)
+      .map((content) => content.trim())
+      .filter((content) => content.length > 0)
       .map((content, chunkIndex) => ({
         id: randomUUID(),
         documentId: document.documentId,
         content,
         chunkIndex,
-        metadata: { ...document.metadata },
+        metadata: {
+          ...document.metadata,
+          chunkCharacterCount: content.length,
+        },
       }));
   }
 }

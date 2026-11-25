@@ -7,10 +7,12 @@ import { ingestionRegistry } from "./loaders/index.js";
 import { WebLoader } from "./loaders/web/web.loader.js";
 import { ingestDocument } from "./core/ingestion.orchestrator.js";
 import { QdrantVectorStore } from "./vector-store/qdrant/qdrant.store.js";
+import { DuplicateDocumentError } from "./core/ingestion.errors.js";
 
 export class IngestionService {
   private webLoader = new WebLoader();
   private vectorStore = new QdrantVectorStore();
+  private activeDocumentIds = new Set<string>();
 
   supportsFile(fileName: string): boolean {
     return ingestionRegistry.supports(fileName);
@@ -31,7 +33,35 @@ export class IngestionService {
   }
 
   async ingestDocument(source: DocumentSource) {
-    return ingestDocument(source);
+    const lockKey = `${source.tenantId}\u0000${source.documentId}`;
+    if (this.activeDocumentIds.has(lockKey)) {
+      throw new DuplicateDocumentError(source.documentId);
+    }
+
+    this.activeDocumentIds.add(lockKey);
+    let ingestionStarted = false;
+    try {
+      if (await this.vectorStore.documentExists(source.documentId, source.tenantId)) {
+        throw new DuplicateDocumentError(source.documentId);
+      }
+
+      ingestionStarted = true;
+      return await ingestDocument(source);
+    } catch (error) {
+      if (ingestionStarted) {
+        try {
+          await this.vectorStore.deleteDocumentChunks(
+            source.documentId,
+            source.tenantId
+          );
+        } catch (cleanupError) {
+          console.error("Failed to roll back partial document ingestion:", cleanupError);
+        }
+      }
+      throw error;
+    } finally {
+      this.activeDocumentIds.delete(lockKey);
+    }
   }
 
   async deleteDocument(documentId: string, tenantId: string) {

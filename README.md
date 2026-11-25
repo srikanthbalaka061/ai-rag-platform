@@ -17,7 +17,10 @@ them, and stores the chunks with tenant and source metadata in Qdrant.
 
 This is a finite list of implemented formats, not support for arbitrary file
 types. Legacy `.doc`, PowerPoint, image files, scanned-PDF OCR, and other
-formats require additional loaders.
+formats require additional loaders. Text is split recursively into roughly
+1,000-character chunks with 150 characters of overlap; Markdown and HTML use
+format-aware separators. Embeddings and vector writes are processed in small
+batches to limit peak memory use.
 
 ## Configuration
 
@@ -50,13 +53,15 @@ service-role key server-side; never expose it to clients.
 ## API
 
 Upload one document as `multipart/form-data` to `POST /api/documents/ingest`.
-Include `file`, `tenantId`, and `uploadedBy`; `tags` is optional and accepts
-comma-separated values. Uploads are limited to 25 MiB and temporary files are
-removed after processing.
+Include the client-generated `documentId`, `file`, `tenantId`, and `uploadedBy`;
+`tags` is optional and accepts comma-separated values. Reusing a document ID
+within the same tenant returns `409 DOCUMENT_ID_ALREADY_EXISTS`. Uploads are
+limited to 25 MiB and temporary files are removed after processing.
 
 ```sh
 curl -X POST http://localhost:3000/api/documents/ingest \
   -F "file=@./document.pdf" \
+  -F "documentId=doc-123" \
   -F "tenantId=tenant-1" \
   -F "uploadedBy=user-1"
 ```

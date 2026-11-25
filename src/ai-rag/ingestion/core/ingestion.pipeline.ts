@@ -13,6 +13,8 @@ import type {
 import { randomUUID } from "node:crypto";
 import { IngestionError } from "./ingestion.errors.js";
 
+const EMBEDDING_BATCH_SIZE = 16;
+
 export class IngestionPipeline {
   constructor(
     private readonly loader: DocumentLoader,
@@ -43,35 +45,39 @@ export class IngestionPipeline {
         throw new Error("No chunks generated");
       }
 
-      // 5. Generate embeddings
-      const vectors = await this.embeddingProvider.embedMany(
-        chunks.map((chunk) => chunk.content)
-      );
+      // 5. Embed and store bounded batches to keep memory use predictable.
+      for (let offset = 0; offset < chunks.length; offset += EMBEDDING_BATCH_SIZE) {
+        const chunkBatch = chunks.slice(offset, offset + EMBEDDING_BATCH_SIZE);
+        const vectors = await this.embeddingProvider.embedMany(
+          chunkBatch.map((chunk) => chunk.content)
+        );
+        if (vectors.length !== chunkBatch.length) {
+          throw new Error("Embedding count does not match chunk batch size");
+        }
 
-      if (vectors.length !== chunks.length) {
-        throw new Error("Embedding count does not match chunk count");
+        const records: VectorRecord[] = chunkBatch.map((chunk, index) => {
+          const vector = vectors[index];
+          if (!vector) {
+            throw new Error(`Embedding missing for chunk ${chunk.chunkIndex}`);
+          }
+          return {
+            id: chunk.id || randomUUID(),
+            vector,
+            payload: {
+              ...chunk.metadata,
+              content: chunk.content,
+              documentId: source.documentId,
+              tenantId: source.tenantId,
+              uploadedBy: source.uploadedBy,
+              fileName: source.fileName,
+              chunkIndex: chunk.chunkIndex,
+              parentId: chunk.parentId ?? null,
+            },
+          };
+        });
+
+        await this.vectorStore.upsert(records);
       }
-
-      // 6. Prepare Qdrant records
-      const records: VectorRecord[] = chunks.map(
-        (chunk, index) => ({
-          id: chunk.id || randomUUID(),
-          vector: vectors[index],
-          payload: {
-            ...chunk.metadata,
-            content: chunk.content,
-            documentId: source.documentId,
-            tenantId: source.tenantId,
-            uploadedBy: source.uploadedBy,
-            fileName: source.fileName,
-            chunkIndex: chunk.chunkIndex,
-            parentId: chunk.parentId ?? null,
-          },
-        })
-      );
-
-      // 7. Store vectors
-      await this.vectorStore.upsert(records);
 
       return {
         documentId: source.documentId,

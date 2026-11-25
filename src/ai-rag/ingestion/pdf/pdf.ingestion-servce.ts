@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import { validatePdf } from "../validation/pdf-validator.js";
 import { extractPdfPages } from "../extraction/pdf/pdf-page-extractor.js";
@@ -10,6 +10,7 @@ import { generatePdfEmbeddings } from "../../embeddings/embedding.service.js";
 import { storePdfChunks } from "../vector-store/vector-store.interface.js";
 
 export interface PdfIngestionInput {
+  documentId: string;
   filePath: string;
   fileName: string;
   tenantId: string;
@@ -19,7 +20,7 @@ export interface PdfIngestionInput {
 export async function ingestPdf(
   input: PdfIngestionInput
 ) {
-  const documentId = randomUUID();
+  const { documentId } = input;
 
   await validatePdf(input.filePath);
 
