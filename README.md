@@ -39,42 +39,61 @@ BHARATSTOCK_API_KEY=your-bharatstock-api-key
 BHARATSTOCK_TIMEOUT_MS=10000
 MARKET_DATA_SYNC_TIMEZONE=Asia/Kolkata
 MARKET_DATA_SYNC_MAX_PAGES=100
-MARKET_DATA_API_TOKEN=use-a-random-secret-at-least-32-characters-long
+AUTH_SUPABASE_URL=https://your-atlas-auth-project.supabase.co
+AUTH_SUPABASE_PUBLISHABLE_KEY=your-atlas-project-publishable-key
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 ```
 
 The configured embedding model must return vectors matching
 `EMBEDDING_DIMENSION`. The server initializes the Qdrant collection on startup.
-The market-data integration requires a BharatStock API key, a private bearer
-token for callers, and Supabase project credentials. Keep the Supabase
-service-role key server-side; never expose it to clients.
+The service uses the Atlas Supabase project to verify user access tokens and
+read the caller's role. `AUTH_SUPABASE_URL` and
+`AUTH_SUPABASE_PUBLISHABLE_KEY` must point to the same Supabase project used by
+the Atlas UI for sign-in and `current_user_role()`. This can be a different
+project from `SUPABASE_URL`, which the backend uses for market-data storage.
+The publishable key may be shared with the UI; the Supabase service-role key
+stays server-side and is never used as the user's API credential.
 
 ## API
 
+Check the authenticated service health endpoint with `GET /api/health`; it
+returns `{ "status": "ok" }` after the shared API authentication middleware
+validates the caller.
+
+Ask questions through `POST /api/rag/ask` with a JSON body containing
+`question` (optional: `topK` and `scoreThreshold`). The endpoint searches the
+shared indexed corpus and does not require a `tenantId`.
+
+```sh
+curl -H "Authorization: Bearer $ATLAS_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What is in the knowledge base?"}' \
+  http://localhost:3000/api/rag/ask
+
+```
+
 Upload one document as `multipart/form-data` to `POST /api/documents/ingest`.
-Include the client-generated `documentId`, `file`, `tenantId`, and `uploadedBy`;
-`tags` is optional and accepts comma-separated values. Reusing a document ID
-within the same tenant returns `409 DOCUMENT_ID_ALREADY_EXISTS`. Uploads are
-limited to 25 MiB and temporary files are removed after processing.
+Include the client-generated `documentId`, `file`, and `tenantId`; `tags` is
+optional and accepts comma-separated values. The backend records `uploadedBy`
+from the verified Atlas user ID. Document ingestion and deletion require the
+Atlas `admin` role. Uploads are limited to 25 MiB and temporary files are
+removed after processing. Reusing a document ID within the same tenant returns
+`409 DOCUMENT_ID_ALREADY_EXISTS`.
 
 ```sh
 curl -X POST http://localhost:3000/api/documents/ingest \
+  -H "Authorization: Bearer $ATLAS_ACCESS_TOKEN" \
   -F "file=@./document.pdf" \
   -F "documentId=doc-123" \
-  -F "tenantId=tenant-1" \
-  -F "uploadedBy=user-1"
+  -F "tenantId=tenant-1"
 ```
-
-Ask questions through `POST /api/rag/ask` with a JSON body containing
-`question` (optional: `topK` and `scoreThreshold`). The ask endpoint searches
-all indexed documents and does not require a `tenantId`.
 
 Delete all indexed chunks for a document with
 `DELETE /api/documents/:documentId?tenantId=...`. The Qdrant filter matches both
 `documentId` and `tenantId`, so the operation cannot delete another tenant's
-document chunks. Qdrant is asked to wait for the delete operation before
-returning.
+document chunks. This endpoint requires the Atlas `admin` role and a user
+access token. Qdrant is asked to wait for the delete operation before returning.
 
 ## BharatStock market data
 
@@ -97,7 +116,7 @@ scheduled runs across multiple server instances. Failed feeds are reported in
 server logs; the latest successful sync remains available to the UI.
 
 ```sh
-curl -H "Authorization: Bearer $MARKET_DATA_API_TOKEN" \
+curl -H "Authorization: Bearer $ATLAS_ACCESS_TOKEN" \
   "http://localhost:3000/api/market-data/deals/bulk?page=1&page_size=20"
 ```
 
@@ -129,18 +148,24 @@ Screener calls still fetch BharatStock on demand and save their responses in
 
 - `GET /api/market-data/screener?filter=pe_ratio.lt.15&page=1&page_size=20`
 
-The API key is sent only to BharatStock, and callers must authenticate using
-the configured bearer token. Unsupported paths and non-GET methods are
-rejected. Before the first scheduled run, the market-wide endpoints
+Every `/api` endpoint requires a valid Atlas Supabase access token. Market-data
+reads are available to all signed-in users; document ingestion/deletion require
+an Atlas admin role. CORS allows browser requests from any origin; API
+authentication remains required for all actual requests. CORS preflight
+requests are handled before authentication, and tools such as Postman can call
+the API without an origin setting.
+The BharatStock API key is sent only to BharatStock. Unsupported paths and
+non-GET methods are rejected. Before the first scheduled run, the market-wide endpoints
 return `503` because no daily data is available yet.
 
 Apply all SQL migrations in `src/market-data/supabase/migrations/` to the Supabase project
 before starting the service. Row-level security is enabled without client
 policies; server-side reads and writes use the service-role key.
 
-**Deployment requirement:** the existing AI ingestion and RAG endpoints still
-need application authentication; derive `tenantId` and `uploadedBy` from the
-authenticated identity before exposing them.
+The former shared `API_AUTH_TOKEN` is no longer accepted. All API callers must
+send a user access token issued by the Atlas Supabase Auth project. The backend
+does not need a local user table: it validates tokens against that Auth project
+and queries `current_user_role()` using the request's user token.
 
 ## Development
 

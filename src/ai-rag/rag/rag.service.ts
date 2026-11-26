@@ -42,6 +42,7 @@ export async function askQuestion(input: AskQuestionInput) {
   const sources = chunks.map((chunk) => ({
     documentId: chunk.documentId,
     fileName: chunk.fileName,
+    content: chunk.content,
     pageStart: chunk.pageStart,
     pageEnd: chunk.pageEnd,
     chunkIndex: chunk.chunkIndex,

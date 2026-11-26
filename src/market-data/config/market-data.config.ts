@@ -41,7 +41,6 @@ export const marketDataConfig = {
     "BHARATSTOCK_BASE_URL"
   ),
   apiKey: getRequiredEnv("BHARATSTOCK_API_KEY"),
-  clientToken: getRequiredEnv("MARKET_DATA_API_TOKEN"),
   timeoutMs: Number(process.env.BHARATSTOCK_TIMEOUT_MS ?? 10_000),
   syncPageSize: 200 as const,
   syncMaxPages: Number(process.env.MARKET_DATA_SYNC_MAX_PAGES ?? 100),
@@ -50,10 +49,6 @@ export const marketDataConfig = {
   maxResponseBytes: 5 * 1024 * 1024,
   maxSnapshotBytes: 25 * 1024 * 1024,
 };
-
-if (marketDataConfig.clientToken.length < 32) {
-  throw new Error("MARKET_DATA_API_TOKEN must contain at least 32 characters");
-}
 
 if (
   !Number.isInteger(marketDataConfig.timeoutMs) ||

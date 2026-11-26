@@ -2,11 +2,6 @@ import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { MarketDataError } from "../core/market-data.errors.js";
 import {
-  marketDataAuthenticationMiddleware,
-  marketDataErrorMiddleware,
-  marketDataRequestMiddleware,
-} from "../middleware/market-data.middleware.js";
-import {
   getLatestDailyMarketData,
   getSavedMarketData,
   requestMarketData,
@@ -93,9 +88,6 @@ async function sendDailyMarketData(
   sendDailySnapshot(response, await getLatestDailyMarketData(dataset, query));
 }
 
-router.use(marketDataRequestMiddleware);
-router.use(marketDataAuthenticationMiddleware);
-
 router.get("/cache/:cacheKey", async (request, response) => {
   const validation = cacheKeySchema.safeParse(request.params.cacheKey);
   if (!validation.success) {
@@ -138,7 +130,5 @@ router.all(/.*/, (_request, response) => {
     error: { code: "METHOD_NOT_ALLOWED", message: "Only GET is supported" },
   });
 });
-
-router.use(marketDataErrorMiddleware);
 
 export default router;

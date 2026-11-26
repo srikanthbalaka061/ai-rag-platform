@@ -7,8 +7,11 @@ import multer from "multer";
 import { z } from "zod";
 import { ingestionService } from "../ingestion/ingestion.service.js";
 import { DuplicateDocumentError } from "../ingestion/core/ingestion.errors.js";
+import { requireAdmin } from "../../middleware/api-authorization.middleware.js";
 
 const router = Router();
+router.use(requireAdmin);
+
 const MAX_UPLOAD_SIZE = 25 * 1024 * 1024;
 const upload = multer({
   storage: multer.diskStorage({
@@ -41,7 +44,6 @@ const uploadMiddleware: RequestHandler = (req, res, next) => {
 const ingestSchema = z.object({
   documentId: z.string().trim().min(1).max(128),
   tenantId: z.string().trim().min(1).max(128),
-  uploadedBy: z.string().trim().min(1).max(128),
   tags: z.string().optional(),
 });
 
@@ -73,7 +75,7 @@ router.post("/ingest", uploadMiddleware, async (req, res) => {
       fileName,
       mimeType: req.file.mimetype,
       tenantId: validation.data.tenantId,
-      uploadedBy: validation.data.uploadedBy,
+      uploadedBy: req.auth!.userId,
       tags: validation.data.tags
         ?.split(",")
         .map((tag) => tag.trim())

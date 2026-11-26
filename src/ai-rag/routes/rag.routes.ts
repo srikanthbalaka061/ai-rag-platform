@@ -6,7 +6,7 @@ import { askQuestion } from "../rag/rag.service.js";
 const router = Router();
 
 const askSchema = z.object({
-  question: z.string().trim().min(1).max(500),
+  question: z.string().trim().min(1).max(4_000),
   topK: z.number().int().min(1).max(8).optional(),
   scoreThreshold: z.number().min(0).max(1).optional(),
 });
